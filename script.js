@@ -95,15 +95,46 @@
     if (!soundToggle?.checked) return;
 
     stopAlarm(); // 念のため既存アラーム停止
+    // ★追加：src が空になっているので、鳴らす前に再設定する
+    alarm.src = ALARM_SRC;
+    alarm.load(); // 念のためロード
     alarmCount = 0;
 
     function playOnce() {
       if (alarmCount >= times) {
-        // ★ アラーム完走したら、発光は止める（終了状態は維持してOK）
+        // アラーム完走：UIを「リセット（同じ時間に戻す）」状態へ戻す
         resetBtn.classList.remove("alarm-attn");
         stopAlarm();
+
+        // 終了状態フラグを解除（これが残ると入力やチップが死にがち）
+        isAlarming = false;
+
+        // 入力系の状態を解除（キャレット出っぱなし対策）
+        if (typeof releaseTypingFocus === "function") {
+          releaseTypingFocus();
+        } else {
+          // releaseTypingFocus が無い場合の最低限
+          try { hiddenInput?.blur(); } catch (_) { }
+          displayContainer?.classList.remove("editing", "focused");
+        }
+
+        // 「クリア」ではなく「リセット」モードに寄せる
+        if (typeof setResetMode === "function") setResetMode("reset");
+
+        // 時間を「直前の設定値」に戻す（= リセット押下の挙動に近い）
+        if (typeof resetToPreset === "function") {
+          resetToPreset();
+        } else if (typeof resetUI === "function") {
+          // resetToPreset が無いプロジェクトなら仕方なく resetUI
+          resetUI();
+        }
+
+        // focus-mode の自動制御を入れているなら同期（入れてないなら不要）
+        if (typeof updateFocusModeAuto === "function") updateFocusModeAuto();
+
         return;
       }
+
 
       try {
         alarm.currentTime = 0;
@@ -132,6 +163,8 @@
     try {
       alarm.pause();
       alarm.currentTime = 0;
+      alarm.src = "";
+      alarm.load();
     } catch (_) { }
   }
 
@@ -457,7 +490,7 @@
     resetBtn.classList.add("alarm-attn");
 
     // 終了音：2.5秒間隔で10回（現状仕様のまま）
-    startAlarmWithGap(10, 2500);
+    startAlarmWithGap(5, 2500);
 
     // ★Sound OFF のときは、発光を短時間で自動停止（鳴らないので完走フックが無い）
     if (!soundToggle?.checked) {
@@ -847,6 +880,9 @@
       if (!soundToggle?.checked) return;
 
       try {
+        // ★追加：再生前にソースを再割り当て
+        alarm.src = ALARM_SRC;
+        alarm.load();
         alarm.currentTime = 0;
         await alarm.play();
       } catch (err) {

@@ -17,6 +17,8 @@
   const displayContainer = document.getElementById("timer-display-container");
   const hiddenInput = document.getElementById("timer-input-hidden");
 
+  const timerCard = document.querySelector(".timer-card");
+
   const hoursSpan = document.getElementById("display-hours");
   const minutesSpan = document.getElementById("display-minutes");
   const secondsSpan = document.getElementById("display-seconds");
@@ -185,7 +187,7 @@
     }
   }
 
-  // 追加：集中モード（Startしたらタイマー以外を隠す）
+  // 集中モード（時間が入ったらタイマー以外を隠す）
   function setFocusMode(on) {
     document.body.classList.toggle("focus-mode", !!on);
   }
@@ -215,6 +217,13 @@
   });
   window.addEventListener("blur", releaseTypingFocus);
   window.addEventListener("pagehide", releaseTypingFocus);
+
+  // 追加：時間が入ったら focus-mode にする（Start起点ではなく入力起点）
+  function updateFocusModeAuto() {
+    const on = (isRunning || isAlarming || totalSeconds > 0);
+    setFocusMode(on);
+  }
+
 
   // ===== Rendering =====
   function renderSpan(spanElement, text, offsetIndex, threshold) {
@@ -267,6 +276,7 @@
         : "ブラウザで使えるシンプルなタイマー";
 
     startBtn.disabled = totalSeconds === 0;
+    updateFocusModeAuto();
     if (timeAddWrap) {
       timeAddWrap.hidden = !(presetSeconds > 0);
     }
@@ -335,7 +345,7 @@
     if (totalSeconds <= 0) return;
 
     // Startした瞬間に集中モードへ
-    setFocusMode(true);
+    // setFocusMode(true);
 
     // ★ここを削除：再生のたびに「残り時間」をpreset扱いにしない
     // presetSeconds = totalSeconds;
@@ -345,6 +355,9 @@
     isRunning = true;
     document.body.classList.add("is-running");
     isPaused = false;
+
+    // 追加：再生に入ったらポーズ見た目を解除
+    timerCard?.classList.remove("is-paused");
 
     displayContainer.classList.remove("paused", "idle");
     displayContainer.classList.add("is-running");
@@ -392,6 +405,8 @@
 
     if (pause) {
       // 一時停止中も「タイマーだけ」でいいなら集中モードは維持
+      // 追加：ポーズ中の見た目をON
+      timerCard?.classList.add("is-paused");
       isPaused = true;
       displayContainer.classList.add("paused");
 
@@ -415,6 +430,7 @@
     isRunning = false;
     isPaused = false;
     isAlarming = true;
+    updateFocusModeAuto();
 
     document.body.classList.remove("is-running");
 
@@ -465,6 +481,9 @@
     isPaused = false;
     isAlarming = false;
 
+    // 追加：ポーズ見た目を解除
+    timerCard?.classList.remove("is-paused");
+
     document.body.classList.remove("is-running");
     rawDigits = "";
     totalSeconds = 0;
@@ -497,6 +516,9 @@
     clearInterval(timerInterval);
 
     isRunning = false;
+
+    // 追加：reset でポーズ見た目は解除（必要なら好みで維持も可）
+    timerCard?.classList.remove("is-paused");
 
     setStartIcon("play");
     startBtn.classList.remove("is-stop");
@@ -795,30 +817,30 @@
   }
 
   // ===== Time Add Chips =====
-if (timeAddWrap && timeAddBtns.length) {
-  timeAddBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (isAlarming) return;
+  if (timeAddWrap && timeAddBtns.length) {
+    timeAddBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (isAlarming) return;
 
-      const add = Number(btn.dataset.add || "0");
-      if (!Number.isFinite(add) || add <= 0) return;
+        const add = Number(btn.dataset.add || "0");
+        if (!Number.isFinite(add) || add <= 0) return;
 
-      // 再生中は残り時間に足して、そのまま表示更新
-      if (isRunning) {
+        // 再生中は残り時間に足して、そのまま表示更新
+        if (isRunning) {
+          totalSeconds = Math.max(0, totalSeconds) + add;
+          updateDisplayCountDown(totalSeconds);
+          return;
+        }
+
+        // 停止中（入力状態）は「入力と同じ表示ルール」に揃える
         totalSeconds = Math.max(0, totalSeconds) + add;
-        updateDisplayCountDown(totalSeconds);
-        return;
-      }
 
-      // 停止中（入力状態）は「入力と同じ表示ルール」に揃える
-      totalSeconds = Math.max(0, totalSeconds) + add;
-
-      // rawDigits を入力っぽい桁数に戻して表示更新（コロン仕様も揃う）
-      setRawDigitsFromTotalSeconds();
-      updateDisplayFromRaw();
+        // rawDigits を入力っぽい桁数に戻して表示更新（コロン仕様も揃う）
+        setRawDigitsFromTotalSeconds();
+        updateDisplayFromRaw();
+      });
     });
-  });
-}
+  }
 
   if (soundTestBtn) {
     soundTestBtn.addEventListener("click", async () => {

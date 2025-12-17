@@ -345,14 +345,14 @@ button:active:not(:disabled) {
 }
 
 /* disabled は opacity 依存をやめて明確に */
-button:disabled {
+/* button:disabled {
   opacity: 1;
   cursor: not-allowed;
   background: #f3f5f8;
   border-color: rgba(0, 0, 0, 0.06);
   box-shadow: none;
   filter: none;
-}
+} */
 
 button:disabled .icon,
 button:disabled .icon * {
@@ -375,22 +375,21 @@ button:disabled:active {
   max-width: 480px;
 }
 
-#btn-start:hover:not(:disabled) {
-  background: var(--btn-blue2);
+/* 押せるときだけ hover で明るくする */
+#btn-start:hover:not(:disabled),
+#btn-start.is-stop:hover:not(:disabled) {
+  filter: brightness(1.2);
 }
 
 #btn-start:disabled {
   background: linear-gradient(180deg, var(--btn-blue), var(--btn-blue2));
   opacity: 50%;
+  cursor: default; /* 念のため */
 }
 
 #btn-start.is-stop {
-  background: var(--btn-blue2);
+  background: var(--btn-red);
   color: #fff;
-}
-
-#btn-start.is-stop:hover {
-  filter: brightness(1.04);
 }
 
 /* Reset / Clear */
@@ -407,6 +406,7 @@ button:disabled:active {
 /* Reset button: hover は色を変えず、軽く揺らすだけ */
 #btn-reset:hover:not(:disabled) {
   background: transparent;
+  background-color: #d8d8d8;
   animation: reset-wiggle 0.25s ease-in-out;
 }
 
@@ -698,15 +698,22 @@ button:disabled:active {
 }
 
 /* ===== Focus Mode ===== */
+body.focus-mode .page-intro {
+  display: none;
+}
+
 body.focus-mode {
   background: #ffffff;
 }
 
 body.focus-mode .timer-card {
-  background: transparent;
-  box-shadow: none;
-  border: none;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.06),
+    0 2px 6px rgba(0, 0, 0, 0.04);
 }
+
 
 body.focus-mode .divider {
   opacity: 0;
@@ -804,5 +811,22 @@ body.page-inactive .timer-display .caret {
   .link-list li:not(:last-child)::after {
     margin: 0 8px;
   }
+}
+
+/* ポーズ中：カード全体の“面”だけを変える（操作盤は触らない） */
+.timer-card.is-paused {
+  background: rgba(31, 41, 55, 0.035);
+}
+
+/* focus-mode中は、少しだけ分かりやすく（好みで調整OK） */
+body.focus-mode .timer-card.is-paused {
+  background: rgba(31, 41, 55, 0.05);
+}
+
+/* 念のため：操作盤側に付けた背景・影を打ち消す（今の二重感を消す） */
+.timer-card.is-paused .controls {
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 

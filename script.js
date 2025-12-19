@@ -31,6 +31,35 @@
   const resetIcon = resetBtn.querySelector(".icon-reset");
   const clearIcon = resetBtn.querySelector(".icon-clear");
 
+  // ===== Progress Divider =====
+  const dividerProgressEl = document.querySelector(".divider-progress");
+  let progressDenomSeconds = 0; // 分母（ゲージの基準秒）
+  let progressElapsedSeconds = 0;
+
+  function setProgressDenom(sec) {
+    const v = Number(sec);
+    progressDenomSeconds = Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0;
+  }
+
+  function renderProgress() {
+    if (!dividerProgressEl) return;
+
+    if (progressDenomSeconds <= 0) {
+      dividerProgressEl.style.setProperty("--progress", "0%");
+      return;
+    }
+
+    const elapsed = Math.max(0, Math.min(progressElapsedSeconds, progressDenomSeconds));
+    const pct = (elapsed / progressDenomSeconds) * 100;
+
+    dividerProgressEl.style.setProperty(
+      "--progress",
+      Math.max(0, Math.min(100, pct)).toFixed(4) + "%"
+    );
+  }
+
+
+
   function setStartIcon(mode) {
     // mode: "play" | "pause"
     if (!playIcon || !pauseIcon) return;
@@ -92,54 +121,28 @@
   let alarmGlowTimeoutId = null;
 
   function startAlarmWithGap(times = 10, gapMs = 2000) {
-    if (!soundToggle?.checked) return;
+    // ここで「音を鳴らすかどうか」だけ決める
+    const willSound = !!soundToggle?.checked;
 
     stopAlarm(); // 念のため既存アラーム停止
-    // ★追加：src が空になっているので、鳴らす前に再設定する
-    alarm.src = ALARM_SRC;
-    alarm.load(); // 念のためロード
     alarmCount = 0;
 
     function playOnce() {
       if (alarmCount >= times) {
-        // アラーム完走：UIを「リセット（同じ時間に戻す）」状態へ戻す
+        // アラーム完走：発光OFF → 停止 → 終了後処理（自動リセット）
         resetBtn.classList.remove("alarm-attn");
         stopAlarm();
-
-        // 終了状態フラグを解除（これが残ると入力やチップが死にがち）
-        isAlarming = false;
-
-        // 入力系の状態を解除（キャレット出っぱなし対策）
-        if (typeof releaseTypingFocus === "function") {
-          releaseTypingFocus();
-        } else {
-          // releaseTypingFocus が無い場合の最低限
-          try { hiddenInput?.blur(); } catch (_) { }
-          displayContainer?.classList.remove("editing", "focused");
-        }
-
-        // 「クリア」ではなく「リセット」モードに寄せる
-        if (typeof setResetMode === "function") setResetMode("reset");
-
-        // 時間を「直前の設定値」に戻す（= リセット押下の挙動に近い）
-        if (typeof resetToPreset === "function") {
-          resetToPreset();
-        } else if (typeof resetUI === "function") {
-          // resetToPreset が無いプロジェクトなら仕方なく resetUI
-          resetUI();
-        }
-
-        // focus-mode の自動制御を入れているなら同期（入れてないなら不要）
-        if (typeof updateFocusModeAuto === "function") updateFocusModeAuto();
-
+        onAlarmSequenceComplete();
         return;
       }
 
-
-      try {
-        alarm.currentTime = 0;
-        alarm.play();
-      } catch (_) { }
+      // サウンドONのときだけ鳴らす（OFFでもシーケンス自体は進める）
+      if (willSound) {
+        try {
+          alarm.currentTime = 0;
+          alarm.play();
+        } catch (_) { }
+      }
 
       alarmCount++;
       alarmTimeoutId = setTimeout(playOnce, gapMs);
@@ -147,6 +150,16 @@
 
     playOnce();
   }
+
+  function onAlarmSequenceComplete() {
+    // 「リセットボタンを押したのと同じ挙動」にしたいので click() が一番確実
+    // （あなたの既存のリセット処理・状態復帰ロジックをそのまま再利用できる）
+    try {
+      resetBtn.click();
+    } catch (_) { }
+  }
+
+
 
   function stopAlarm() {
     if (alarmTimeoutId) {
@@ -158,15 +171,15 @@
       clearTimeout(alarmGlowTimeoutId);
       alarmGlowTimeoutId = null;
     }
+
     alarmCount = 0;
 
     try {
       alarm.pause();
       alarm.currentTime = 0;
-      alarm.src = "";
-      alarm.load();
     } catch (_) { }
   }
+
 
 
 
@@ -180,6 +193,27 @@
     if (savedVol !== null) volumeSlider.value = savedVol;
   }
 
+  const soundIconEl = document.querySelector(".sound-icon");
+
+  function updateSoundIcon() {
+    const enabled = !!soundToggle?.checked;
+    const vol = Number(volumeSlider?.value ?? 0); // 0-100
+    const isMuted = (!enabled) || vol <= 0;
+    if (soundIconEl) soundIconEl.classList.toggle("is-muted", isMuted);
+  }
+
+  function updateSoundMutedUI() {
+    const enabled = !!soundToggle?.checked;
+    const vol = Number(volumeSlider?.value ?? 0);
+    const isMuted = (!enabled) || vol <= 0;
+
+    // スライダーにミュート状態を反映
+    if (volumeSlider) {
+      volumeSlider.classList.toggle("is-muted", isMuted);
+    }
+  }
+
+
   // 反映
   function applySoundUI() {
     const on = !!soundToggle?.checked;
@@ -188,13 +222,24 @@
     alarm.volume = Math.min(1, Math.max(0, vol));
 
     if (toggleLabel) toggleLabel.textContent = on ? "Sound ON" : "Sound OFF";
-    if (volumeSlider) volumeSlider.disabled = !on;
+    // volumeSlider は常に操作可能にする
+    // soundTestBtn だけは OFF 時は無効のままでOK
     if (soundTestBtn) soundTestBtn.disabled = !on;
-    soundToggle?.closest(".sound-icon-toggle")?.setAttribute("title", soundToggle.checked ? "Sound ON" : "Sound OFF");
+
+
+    soundToggle?.closest(".sound-icon-toggle")?.setAttribute(
+      "title",
+      soundToggle.checked ? "Sound ON" : "Sound OFF"
+    );
+
+    // アイコン・スライダー両方を同期
+    updateSoundIcon();
+    updateSoundMutedUI();
 
   }
 
   applySoundUI();
+
 
 
   // 初期状態
@@ -297,6 +342,14 @@
     renderSpan(secondsSpan, sStr, 4, threshold);
 
     totalSeconds = parseInt(hStr, 10) * 3600 + parseInt(mStr, 10) * 60 + parseInt(sStr, 10);
+    // ★入力中のみ Progress を初期化する
+    if (!isRunning && !isPaused) {
+      setProgressDenom(totalSeconds);
+      progressElapsedSeconds = 0;
+      renderProgress();
+    }
+
+
 
     if (!isPaused) {
       presetSeconds = totalSeconds;
@@ -371,33 +424,37 @@
   function startTimer() {
     if (document.activeElement === hiddenInput) hiddenInput.blur();
 
+    // 再生中ならポーズ
     if (isRunning) {
       stopTimer(true);
       return;
     }
     if (totalSeconds <= 0) return;
 
-    // Startした瞬間に集中モードへ
-    // setFocusMode(true);
-
-    // ★ここを削除：再生のたびに「残り時間」をpreset扱いにしない
-    // presetSeconds = totalSeconds;
-
     setResetMode("reset");
 
+    const resuming = isPaused; // ★追加：ポーズ解除かどうか先に確定
+
+    // ★ポーズ解除：進捗は維持（初期化しない）
+    if (resuming) {
+      isPaused = false;
+      timerCard?.classList.remove("is-paused");
+    } else {
+      // ★新規スタート：分母＝スタート時の秒、経過＝0
+      setProgressDenom(totalSeconds);
+      progressElapsedSeconds = 0;
+      renderProgress();
+    }
+
+    // 共通：走行状態へ
     isRunning = true;
     document.body.classList.add("is-running");
-    isPaused = false;
-
-    // 追加：再生に入ったらポーズ見た目を解除
-    timerCard?.classList.remove("is-paused");
 
     displayContainer.classList.remove("paused", "idle");
     displayContainer.classList.add("is-running");
     displayContainer.dataset.running = "true";
 
     setStartIcon("pause");
-
     startBtn.classList.add("is-stop");
     updateDisplayCountDown(totalSeconds);
 
@@ -411,6 +468,10 @@
       totalSeconds--;
       updateDisplayCountDown(Math.max(0, totalSeconds));
 
+      // ★進捗：経過を+1（分母は固定）
+      progressElapsedSeconds = Math.min(progressDenomSeconds, progressElapsedSeconds + 1);
+      renderProgress();
+
       if (totalSeconds <= 0) {
         finishTimer();
         return;
@@ -419,14 +480,19 @@
   }
 
 
+
   function stopTimer(pause) {
     stopAlarm();
     clearInterval(timerInterval);
+
     isRunning = false;
-    document.body.classList.add("is-running");
+
+    // ★変更：pause のときは is-running を外さない（ディバイダーを“バー表示”のまま保つ）
+    if (!pause) {
+      document.body.classList.remove("is-running");
+    }
 
     setStartIcon("play");
-
     startBtn.classList.remove("is-stop");
 
     displayContainer.dataset.running = "false";
@@ -437,27 +503,32 @@
     setResetEnabled(true);
 
     if (pause) {
-      // 一時停止中も「タイマーだけ」でいいなら集中モードは維持
-      // 追加：ポーズ中の見た目をON
       timerCard?.classList.add("is-paused");
       isPaused = true;
       displayContainer.classList.add("paused");
 
-      const h = Math.floor(totalSeconds / 3600);
-      const m = Math.floor((totalSeconds % 3600) / 60);
-      const s = totalSeconds % 60;
+      // ポーズ時は見た目と進捗をそのまま表示
+      updateDisplayCountDown(totalSeconds);
+      renderProgress();
 
-      rawDigits = String(h).padStart(2, "0") + String(m).padStart(2, "0") + String(s).padStart(2, "0");
-      updateDisplayFromRaw();
       setResetMode("reset");
       setIdle(true);
       setEditing(false);
       setFocused(false);
+    } else {
+      timerCard?.classList.remove("is-paused");
+      isPaused = false;
+      displayContainer.classList.remove("paused");
     }
   }
 
+
+
   function finishTimer() {
     clearInterval(timerInterval);
+
+    // ★追加：ゼロ到達の霧演出
+    startFogEffect(4200);
 
     // 終了状態へ
     isRunning = false;
@@ -466,6 +537,7 @@
     updateFocusModeAuto();
 
     document.body.classList.remove("is-running");
+    document.body.classList.add("is-alarming");
 
     // 0表示をキープ
     totalSeconds = 0;
@@ -486,11 +558,11 @@
     displayContainer.classList.remove("is-running", "paused", "editing", "focused");
     displayContainer.classList.add("idle");
     displayContainer.classList.add("alarming");
-    document.body.classList.add("is-alarming");
+
     resetBtn.classList.add("alarm-attn");
 
     // 終了音：2.5秒間隔で10回（現状仕様のまま）
-    startAlarmWithGap(5, 2500);
+    startAlarmWithGap(10, 2500);
 
     // ★Sound OFF のときは、発光を短時間で自動停止（鳴らないので完走フックが無い）
     if (!soundToggle?.checked) {
@@ -521,6 +593,11 @@
     rawDigits = "";
     totalSeconds = 0;
     presetSeconds = 0;
+    setProgressDenom(0);
+    progressElapsedSeconds = 0;   // ★F：経過も完全リセット
+    renderProgress();             // ★F：バーを空に描画
+
+
 
     hiddenInput.value = "";
 
@@ -539,6 +616,7 @@
 
     // 0に戻したら集中モード解除（元の説明・リンクを戻す）
     setFocusMode(false);
+    stopFogEffect();
   }
 
   function resetToPreset(stopSound = true) {
@@ -562,6 +640,11 @@
 
     totalSeconds = Math.max(0, presetSeconds);
 
+    progressElapsedSeconds = 0;
+    setProgressDenom(totalSeconds);
+    renderProgress();
+
+
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
     const s = totalSeconds % 60;
@@ -584,6 +667,7 @@
 
     // resetでも集中モードは維持
     setFocusMode(true);
+    stopFogEffect();
   }
 
 
@@ -837,42 +921,108 @@
 
   if (soundToggle) {
     soundToggle.addEventListener("change", () => {
-      localStorage.setItem(LS_SOUND_ON, soundToggle.checked ? "1" : "0");
+      const turnedOn = soundToggle.checked;
+
+      // OFF→ON：音量が0なら真ん中へ
+      if (turnedOn) {
+        if (volumeSlider && Number(volumeSlider.value) <= 0) {
+          volumeSlider.value = "50";
+          localStorage.setItem(LS_SOUND_VOL, "50");
+        }
+      } else {
+        // ON→OFF：音量を0へ
+        if (volumeSlider) {
+          volumeSlider.value = "0";
+          localStorage.setItem(LS_SOUND_VOL, "0");
+        }
+      }
+
+      localStorage.setItem(LS_SOUND_ON, turnedOn ? "1" : "0");
       applySoundUI();
     });
   }
 
-  if (volumeSlider) {
-    volumeSlider.addEventListener("input", () => {
-      localStorage.setItem(LS_SOUND_VOL, String(volumeSlider.value));
-      applySoundUI();
-    });
-  }
+
+  volumeSlider.addEventListener("input", () => {
+    const vol = Number(volumeSlider.value);
+
+    localStorage.setItem(LS_SOUND_VOL, String(vol));
+
+    // 1以上になったら自動でON
+    if (vol > 0 && soundToggle && !soundToggle.checked) {
+      soundToggle.checked = true;
+      localStorage.setItem(LS_SOUND_ON, "1");
+
+      // 0になったら自動でOFF（←ここを追加）
+    } else if (vol <= 0 && soundToggle && soundToggle.checked) {
+      soundToggle.checked = false;
+      localStorage.setItem(LS_SOUND_ON, "0");
+    }
+
+    applySoundUI();
+  });
+
+
 
   // ===== Time Add Chips =====
   if (timeAddWrap && timeAddBtns.length) {
     timeAddBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
-        if (isAlarming) return;
-
-        const add = Number(btn.dataset.add || "0");
+        const add = Number(btn.dataset.add || 0);
         if (!Number.isFinite(add) || add <= 0) return;
 
-        // 再生中は残り時間に足して、そのまま表示更新
-        if (isRunning) {
+        // ★アラーム中：チップ操作＝「止めて、新規タイマーを add 秒でセット」（パターン1）
+        // ★アラーム中：リセットと同じ経路を通す（超重要）
+        // アラーム中：まず「リセットボタンと同じ経路」で完全復帰
+        // その後「0をベース」にして、通常の停止中加算へ流す（パターン1）
+        if (isAlarming) {
+          resetToPreset(true);
+
+          // 念のため状態を確実に通常へ（ここが“途中で押すとリセット”対策）
+          isAlarming = false;
+          isPaused = false;
+          isRunning = false;
+          timerCard?.classList.remove("is-paused");
+          document.body.classList.remove("is-running");
+          displayContainer.classList.remove("paused");
+
+          // パターン1：ベースを0に戻す（ここが“連打で加算されない”対策）
+          presetSeconds = 0;
+          totalSeconds = 0;
+
+          // ★ここで return しない！
+          // このまま下の「停止中加算」ロジックに落とす
+        }
+
+
+
+
+        // 再生中 or ポーズ中：残りを増やし、経過は維持
+        if (isRunning || isPaused) {
           totalSeconds = Math.max(0, totalSeconds) + add;
+
+          // 再生中 or ポーズ中：ゴールを延ばすだけ
+          setProgressDenom(progressDenomSeconds + add);
+          renderProgress();
+
+
           updateDisplayCountDown(totalSeconds);
           return;
         }
 
-        // 停止中（入力状態）は「入力と同じ表示ルール」に揃える
-        totalSeconds = Math.max(0, totalSeconds) + add;
+        // 完全停止（初期状態/未開始）：次回スタートの値を増やす
+        presetSeconds = Math.max(0, presetSeconds) + add;
+        totalSeconds = presetSeconds;
 
-        // rawDigits を入力っぽい桁数に戻して表示更新（コロン仕様も揃う）
-        setRawDigitsFromTotalSeconds();
-        updateDisplayFromRaw();
+        setProgressDenom(totalSeconds);
+        progressElapsedSeconds = 0;
+        renderProgress();
+
+        updateDisplayCountDown(totalSeconds);
+        return;
       });
     });
+
   }
 
   if (soundTestBtn) {
@@ -921,6 +1071,27 @@
   // さらに確実にする（ウィンドウフォーカスでも制御）
   window.addEventListener("blur", () => setPageInactive(true));
   window.addEventListener("focus", () => setPageInactive(false));
+
+  let fogTimeoutId = null;
+
+  function startFogEffect() {
+    // 出しっぱなし（リセットされるまで維持）
+    document.body.classList.add("alarm-fog");
+
+    // もし過去のタイムアウトが残っていたら消す（保険）
+    if (fogTimeoutId) {
+      clearTimeout(fogTimeoutId);
+      fogTimeoutId = null;
+    }
+  }
+
+  function stopFogEffect() {
+    if (fogTimeoutId) {
+      clearTimeout(fogTimeoutId);
+      fogTimeoutId = null;
+    }
+    document.body.classList.remove("alarm-fog");
+  }
 
 
 });

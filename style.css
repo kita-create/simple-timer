@@ -683,7 +683,7 @@ button:disabled:active {
   border-radius: 999px;
   text-align: center;
 
-  background: rgba(0, 0, 0, 0.04);
+  background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.08);
   color: rgba(0, 0, 0, 0.65);
 
